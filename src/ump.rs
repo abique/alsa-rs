@@ -72,50 +72,37 @@ impl Ump {
         from_const("snd_ump_name", c).map(|s| s.to_string())
     }
 
-    #[cfg(feature = "std")]
-    pub fn read(&mut self, buf: &mut [u32]) -> std::io::Result<usize> {
-        let r = unsafe {
-            alsa::snd_ump_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len() as size_t)
-        };
-        if r < 0 {
-            Err(std::io::Error::from_raw_os_error(r as i32))
-        } else {
-            Ok(r as usize)
-        }
+    pub fn read(&mut self, buf: &mut [u32]) -> Result<usize> {
+        acheck!(snd_ump_read(
+            self.0,
+            buf.as_mut_ptr() as *mut c_void,
+            buf.len() as size_t
+        ))
+        .map(|sz| sz as usize)
     }
 
-    #[cfg(feature = "std")]
-    pub fn tread(&mut self, buf: &mut [u32]) -> std::io::Result<(timespec, usize)> {
+    pub fn tread(&mut self, buf: &mut [u32]) -> Result<(timespec, usize)> {
         let mut timestamp: timespec = timespec {
             tv_sec: 0,
             tv_nsec: 0,
         };
 
-        let r = unsafe {
-            alsa::snd_ump_tread(
-                self.0,
-                &mut timestamp as *mut timespec,
-                buf.as_mut_ptr() as *mut c_void,
-                buf.len() as size_t,
-            )
-        };
-        if r < 0 {
-            Err(std::io::Error::from_raw_os_error(r as i32))
-        } else {
-            Ok((timestamp, r as usize))
-        }
+        acheck!(snd_ump_tread(
+            self.0,
+            (&mut timestamp) as *mut timespec,
+            buf.as_mut_ptr() as *mut c_void,
+            buf.len()
+        ))
+        .map(|sz| (timestamp, sz as usize))
     }
 
-    #[cfg(feature = "std")]
-    pub fn write(&mut self, buf: &[u32]) -> std::io::Result<usize> {
-        let r = unsafe {
-            alsa::snd_ump_write(self.0, buf.as_ptr() as *const c_void, buf.len() as size_t)
-        };
-        if r < 0 {
-            Err(std::io::Error::from_raw_os_error(r as i32))
-        } else {
-            Ok(r as usize)
-        }
+    pub fn write(&mut self, buf: &[u32]) -> Result<usize> {
+        acheck!(snd_ump_write(
+            self.0,
+            buf.as_ptr() as *const c_void,
+            buf.len() as size_t
+        ))
+        .map(|sz| sz as usize)
     }
 
     pub fn nonblock(&mut self, nonblock: i32) -> Result<()> {
