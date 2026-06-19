@@ -1,6 +1,6 @@
 //! MIDI devices I/O and enumeration
 
-use libc::{c_int, c_uint, c_void, size_t, c_short, pollfd};
+use libc::{c_int, c_short, c_uint, c_void, pollfd, size_t, timespec};
 use super::ctl_int::{ctl_ptr, Ctl};
 use super::{Direction, poll};
 use super::error::*;
@@ -168,6 +168,26 @@ impl Rawmidi {
         from_const("snd_rawmidi_name", c).map(|s| s.to_string())
     }
 
+    pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
+        acheck!(snd_rawmidi_read(self.0, buf.as_mut_ptr() as *mut c_void, buf.len()))
+            .map(|sz| sz as usize)
+    }
+
+    pub fn tread(&self, buf: &mut [u8]) -> Result<(timespec, usize)> {
+        let mut timestamp: timespec = timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        acheck!(snd_rawmidi_tread(self.0, (&mut timestamp) as *mut timespec, buf.as_mut_ptr() as *mut c_void, buf.len()))
+            .map(|sz| (timestamp, sz as usize))
+    }
+
+    pub fn write(&self, buf: &[u8]) -> Result<usize> {
+        acheck!(snd_rawmidi_write(self.0, buf.as_ptr() as *const c_void, buf.len()))
+            .map(|sz| sz as usize)
+    }
+
+    #[cfg(feature = "std")]
     pub fn io(&self) -> IO<'_> { IO(self) }
 }
 
