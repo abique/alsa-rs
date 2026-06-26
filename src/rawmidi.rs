@@ -70,6 +70,84 @@ impl Info {
     }
 }
 
+alsa_enum!(
+    /// [SND_RAWMIDI_READ_XXX](http://www.alsa-project.org/alsa-doc/alsa-lib/group___raw_midi.html) constants
+    ReadMode, ALL_READ_MODES[2],
+
+    Standard = SND_RAWMIDI_READ_STANDARD,
+    Timestamp = SND_RAWMIDI_READ_TSTAMP,
+);
+
+alsa_enum!(
+    /// [SND_RAWMIDI_CLOCK_XXX](http://www.alsa-project.org/alsa-doc/alsa-lib/group___raw_midi.html) constants
+    Clock, ALL_CLOCKS[4],
+
+    None = SND_RAWMIDI_CLOCK_NONE,
+    Realtime = SND_RAWMIDI_CLOCK_REALTIME,
+    Monotonic = SND_RAWMIDI_CLOCK_MONOTONIC,
+    MonotonicRaw = SND_RAWMIDI_CLOCK_MONOTONIC_RAW,
+);
+
+/// [snd_rawmidi_params_t](http://www.alsa-project.org/alsa-doc/alsa-lib/group___raw_midi.html) wrapper
+#[derive(Debug)]
+pub struct Params(pub(crate) *mut alsa::snd_rawmidi_params_t);
+
+impl Drop for Params {
+    fn drop(&mut self) {
+        unsafe { alsa::snd_rawmidi_params_free(self.0) };
+    }
+}
+
+impl Params {
+    pub fn new() -> Result<Params> {
+        let mut p = ptr::null_mut();
+        acheck!(snd_rawmidi_params_malloc(&mut p)).map(|_| Params(p))
+    }
+
+    pub fn copy(&mut self, source: &Self) {
+        unsafe { alsa::snd_rawmidi_params_copy(self.0, source.0); }
+    }
+
+    pub fn get_buffer_size(&self) -> usize {
+        unsafe { alsa::snd_rawmidi_params_get_buffer_size(self.0) as usize }
+    }
+
+    pub fn get_avail_min(&self) -> usize {
+        unsafe { alsa::snd_rawmidi_params_get_avail_min(self.0) as usize }
+    }
+
+    pub fn set_avail_min(&mut self, rawmidi: &Rawmidi, val: usize)-> Result<()> {
+        acheck!(snd_rawmidi_params_set_avail_min(rawmidi.0, self.0, val)).map(|_| ())
+    }
+
+    pub fn get_no_active_sensing(&self) -> bool {
+        let v = unsafe { alsa::snd_rawmidi_params_get_no_active_sensing(self.0) };
+        v != 0
+    }
+
+    pub fn set_no_active_sensing(&mut self, rawmidi: &Rawmidi, val: bool)-> Result<()> {
+        acheck!(snd_rawmidi_params_set_no_active_sensing(rawmidi.0, self.0, if val { 1 } else { 0 })).map(|_| ())
+    }
+
+    pub fn get_read_mode(&self) -> Result<ReadMode> {
+        let c_value = unsafe { alsa::snd_rawmidi_params_get_read_mode(self.0) };
+        ReadMode::from_c_int(c_value as i32, "snd_rawmidi_params_get_read_mode")
+    }
+
+    pub fn set_read_mode(&mut self, rawmidi: &Rawmidi, val: ReadMode) -> Result<()> {
+        acheck!(snd_rawmidi_params_set_read_mode(rawmidi.0, self.0, val.to_c_int() as u32)).map(|_| ())
+    }
+
+    pub fn get_clock_type(&self) -> Result<Clock> {
+        let c_value = unsafe { alsa::snd_rawmidi_params_get_clock_type(self.0) };
+        Clock::from_c_int(c_value as i32, "snd_rawmidi_params_get_clock_type")
+    }
+
+    pub fn set_clock_type(&mut self, rawmidi: &Rawmidi, val: Clock) -> Result<()> {
+        acheck!(snd_rawmidi_params_set_clock_type(rawmidi.0, self.0, val.to_c_int() as u32)).map(|_| ())
+    }
+}
+
 /// [snd_rawmidi_info_t](http://www.alsa-project.org/alsa-doc/alsa-lib/group___raw_midi.html) wrapper
 #[derive(Debug)]
 pub struct Status(pub(crate) *mut alsa::snd_rawmidi_status_t);
@@ -128,12 +206,16 @@ impl<'a> Iterator for Iter<'a> {
 
 /// [snd_rawmidi_t](http://www.alsa-project.org/alsa-doc/alsa-lib/group___raw_midi.html) wrapper
 #[derive(Debug)]
-pub struct Rawmidi(*mut alsa::snd_rawmidi_t);
+pub struct Rawmidi(pub(crate) *mut alsa::snd_rawmidi_t);
 
 unsafe impl Send for Rawmidi {}
 
 impl Drop for Rawmidi {
-    fn drop(&mut self) { unsafe { alsa::snd_rawmidi_close(self.0) }; }
+    fn drop(&mut self) {
+        if self.0 != ptr::null_mut() {
+            unsafe { alsa::snd_rawmidi_close(self.0) };
+        }
+    }
 }
 
 impl Rawmidi {
@@ -189,6 +271,15 @@ impl Rawmidi {
 
     #[cfg(feature = "std")]
     pub fn io(&self) -> IO<'_> { IO(self) }
+
+    pub fn params_current(&self) -> Result<Params> {
+        let params = Params::new()?;
+        acheck!(snd_rawmidi_params_current(self.0, params.0)).map(|_| params)
+    }
+
+    pub fn params(&mut self, params: &Params) -> Result<()> {
+        acheck!(snd_rawmidi_params(self.0, params.0)).map(|_| ())
+    }
 }
 
 impl poll::Descriptors for Rawmidi {

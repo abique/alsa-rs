@@ -5,22 +5,26 @@ use super::{poll, Direction};
 use crate::alsa;
 use ::alloc::ffi::CString;
 use ::alloc::string::{String, ToString};
+use alsa::snd_ump_rawmidi;
 use core::ffi::CStr;
 use core::ptr;
 use libc::{c_short, c_uint, c_void, pollfd, size_t, timespec};
 
 pub use super::rawmidi::Info;
 pub use super::rawmidi::Iter;
+pub use super::rawmidi::Params;
+pub use super::rawmidi::Rawmidi;
 pub use super::rawmidi::Status;
 
 /// [snd_ump_t](http://www.alsa-project.org/alsa-doc/alsa-lib/group___raw_midi.html) wrapper
 #[derive(Debug)]
-pub struct Ump(*mut alsa::snd_ump_t);
+pub struct Ump(*mut alsa::snd_ump_t, Rawmidi);
 
 unsafe impl Send for Ump {}
 
 impl Drop for Ump {
     fn drop(&mut self) {
+        self.1.0 = ptr::null_mut();
         unsafe { alsa::snd_ump_close(self.0) };
     }
 }
@@ -48,7 +52,7 @@ impl Ump {
             name.as_ptr(),
             flags
         ))
-        .map(|_| Ump(h))
+        .map(|_| Ump(h, Rawmidi(unsafe { snd_ump_rawmidi(h) })))
     }
 
     pub fn rawmidi_info(&self) -> Result<Info> {
@@ -107,6 +111,19 @@ impl Ump {
 
     pub fn nonblock(&mut self, nonblock: i32) -> Result<()> {
         acheck!(snd_ump_nonblock(self.0, nonblock)).map(|_| ())
+    }
+
+    pub fn rawmidi(&self) -> &Rawmidi {
+        &self.1
+    }
+
+    pub fn rawmidi_params_current(&self) -> Result<Params> {
+        let params = Params::new()?;
+        acheck!(snd_ump_rawmidi_params_current(self.0, params.0)).map(|_| params)
+    }
+
+    pub fn rawmidi_params(&mut self, params: &Params) -> Result<()> {
+        acheck!(snd_ump_rawmidi_params(self.0, params.0)).map(|_| ())
     }
 }
 
